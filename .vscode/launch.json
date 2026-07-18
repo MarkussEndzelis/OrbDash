@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations":[
+        {
+            "name": "Run OrbDash",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/OrbDash.exe",
+            "cwd": "${workspaceFolder}/build",
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:/mysys64/ucrt64/bin/gdb.exe",
+            "preLaunchTask": "Build OrbDash",
+            "externalConsole": false
+        }
+    ]
+}
