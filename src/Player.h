@@ -12,14 +12,14 @@ public:
     void update(float dt);
     void render(sf::RenderWindow& window, float screenX);
 
-    float getY() const {return y; }
-    bool isOnGround() const {return onGround; }
+    float getY() const { return y; }
+    bool isOnGround() const { return onGround; }
     static float getGroundY();
 
 private:
     float y;
     float velocityY;
-    float rotation;
+    float rotation; // degrees, kept as plain float internally
     bool onGround;
 
     static constexpr float GRAVITY = 2200.f;

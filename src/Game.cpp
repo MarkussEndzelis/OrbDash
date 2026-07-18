@@ -4,31 +4,39 @@
 #include <iomanip>
 
 Game::Game()
-    :window(sf::VideoMode((unsigned int)WIDTH, (unsigned int)HEIGHT), "OrbDash"),
-     level(Level::testLevel()){
-        window.setFramerateLimit(144);
-        if (!font.loadFromFile("assets/font.ttf")){
-
-    }
+    : window(sf::VideoMode(sf::Vector2u((unsigned int)WIDTH, (unsigned int)HEIGHT)), "OrbDash"),
+      level(Level::testLevel())
+{
+    window.setFramerateLimit(144);
+    fontLoaded = font.openFromFile("assets/font.ttf");
 }
 
-void Game::restart(){
+void Game::restart() {
     player.reset();
     cameraX = 0.f;
     dead = false;
     started = false;
 }
 
-void Game::handleInput(){
-    sf::Event event;
-    while (window.pollEvent(event)){
-        if (event.type == sf::Event::Closed){
+void Game::handleInput() {
+    while (const std::optional<sf::Event> event = window.pollEvent()) {
+        if (event->is<sf::Event::Closed>()) {
             window.close();
         }
-        if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space){
-            if (dead){
+        if (const auto* keyPressed = event->getIf<sf::Event::KeyPressed>()) {
+            if (keyPressed->code == sf::Keyboard::Key::Space) {
+                if (dead) {
+                    restart();
+                } else {
+                    started = true;
+                    player.jump();
+                }
+            }
+        }
+        if (event->is<sf::Event::MouseButtonPressed>()) {
+            if (dead) {
                 restart();
-            }else {
+            } else {
                 started = true;
                 player.jump();
             }
@@ -36,52 +44,52 @@ void Game::handleInput(){
     }
 }
 
-void Game::update(float dt){
+void Game::update(float dt) {
     if (dead || !started) return;
 
     cameraX += SCROLL_SPEED * dt;
     player.update(dt);
 
     float playerWorldX = 150.f + cameraX;
-    for (const auto& obs : level.getObstacles()){
+    for (const auto& obs : level.getObstacles()) {
         bool hit;
-        if (obs.type == ObstacleType::Block){
+        if (obs.type == ObstacleType::Block) {
             float top = Player::getGroundY() - obs.height;
             hit = CollisionUtils::circleRectCollides(playerWorldX, player.getY(), Player::RADIUS,
-                obs.worldX, top, obs.width, obs.height);
-        }else {
-            hit = CollisionUtils::circleTriangleCollides(playerWorldX, player.getY(), Player::RADIUS, 
-                        obs.worldX, Player::getGroundY(), obs.width, obs.height);
+                    obs.worldX, top, obs.width, obs.height);
+        } else {
+            hit = CollisionUtils::circleTriangleCollides(playerWorldX, player.getY(), Player::RADIUS,
+                    obs.worldX, Player::getGroundY(), obs.width, obs.height);
         }
-        if (hit){
+        if (hit) {
             dead = true;
             break;
         }
     }
 
-    if (cameraX >= level.getLength()){
+    if (cameraX >= level.getLength()) {
         dead = true;
     }
 }
 
-void Game::render(){
+void Game::render() {
     window.clear(sf::Color(0x1b, 0x1b, 0x2b));
 
     sf::RectangleShape ground(sf::Vector2f(WIDTH, HEIGHT - Player::getGroundY()));
-    ground.setPosition(0.f, Player::getGroundY());
+    ground.setPosition(sf::Vector2f(0.f, Player::getGroundY()));
     ground.setFillColor(sf::Color(0x2c, 0x2c, 0x44));
     window.draw(ground);
 
-    for (const auto& obs : level.getObstacles()){
+    for (const auto& obs : level.getObstacles()) {
         float screenX = obs.worldX - cameraX;
         if (screenX < -100.f || screenX > WIDTH + 100.f) continue;
 
-        if (obs.type == ObstacleType::Block){
+        if (obs.type == ObstacleType::Block) {
             sf::RectangleShape rect(sf::Vector2f(obs.width, obs.height));
-            rect.setPosition(screenX, Player::getGroundY() - obs.height);
+            rect.setPosition(sf::Vector2f(screenX, Player::getGroundY() - obs.height));
             rect.setFillColor(sf::Color(0xe8, 0xa3, 0x3d));
             window.draw(rect);
-        }else {
+        } else {
             sf::ConvexShape tri(3);
             float baseY = Player::getGroundY();
             tri.setPoint(0, sf::Vector2f(screenX, baseY));
@@ -94,36 +102,37 @@ void Game::render(){
 
     player.render(window, 150.f);
 
-    if (font.getInfo().family != ""){
+    if (fontLoaded) {
         float progress = std::min(100.f, (cameraX / level.getLength()) * 100.f);
         std::ostringstream ss;
         ss << std::fixed << std::setprecision(0) << progress << "%";
 
-        sf::Text progressText(ss.str(), font, 20);
+        sf::Text progressText(font, ss.str(), 20);
         progressText.setFillColor(sf::Color::White);
-        progressText.setPosition(WIDTH - 70.f, 20.f);
+        progressText.setPosition(sf::Vector2f(WIDTH - 70.f, 20.f));
         window.draw(progressText);
 
-        if (!started && !dead){
-            sf::Text startText("Click or press SPACE to start", font, 24);
+        if (!started && !dead) {
+            sf::Text startText(font, "Click or press SPACE to start", 24);
             startText.setFillColor(sf::Color::White);
-            startText.setPosition(WIDTH / 2.f - 200.f, HEIGHT / 2.f - 60.f);
+            startText.setPosition(sf::Vector2f(WIDTH / 2.f - 200.f, HEIGHT / 2.f - 60.f));
             window.draw(startText);
         }
 
-        if (dead){
-            sf::Text deadText("You died - click to retry", font, 32);
+        if (dead) {
+            sf::Text deadText(font, "You died - click to retry", 32);
             deadText.setFillColor(sf::Color(0xff, 0x5e, 0x5e));
-            deadText.setPosition(WIDTH / 2.f - 190.f, HEIGHT / 2.f - 20.f);
+            deadText.setPosition(sf::Vector2f(WIDTH / 2.f - 190.f, HEIGHT / 2.f - 20.f));
             window.draw(deadText);
         }
     }
+
     window.display();
 }
 
-void Game::run(){
+void Game::run() {
     sf::Clock clock;
-    while (window.isOpen()){
+    while (window.isOpen()) {
         float dt = clock.restart().asSeconds();
         if (dt > 0.05f) dt = 0.05f;
 

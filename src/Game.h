@@ -14,6 +14,7 @@ public:
 private:
     sf::RenderWindow window;
     sf::Font font;
+    bool fontLoaded = false;
     Player player;
     Level level;
 

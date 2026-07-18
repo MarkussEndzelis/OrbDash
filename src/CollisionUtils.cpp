@@ -45,7 +45,15 @@ namespace {
 
 namespace CollisionUtils {
 
-bool circleRectCollides(float cx, float cy, float radius, float baseX, float baseY, float width, float height) {
+bool circleRectCollides(float cx, float cy, float radius, float rx, float ry, float rw, float rh){
+    float closestX = clamp(cx, rx, rx + rw);
+    float closestY = clamp(cy, ry, ry + rh);
+    float dx = cx - closestX;
+    float dy = cy - closestY;
+    return (dx * dx + dy * dy) < (radius * radius);
+}
+
+bool circleTriangleCollides(float cx, float cy, float radius, float baseX, float baseY, float width, float height){
     float x1 = baseX, y1 = baseY;
     float x2 = baseX + width, y2 = baseY;
     float x3 = baseX + width / 2.f, y3 = baseY - height;
