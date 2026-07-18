@@ -15,6 +15,7 @@ void Game::restart() {
     player.reset();
     cameraX = 0.f;
     dead = false;
+    won = false;
     started = false;
 }
 
@@ -25,7 +26,7 @@ void Game::handleInput() {
         }
         if (const auto* keyPressed = event->getIf<sf::Event::KeyPressed>()) {
             if (keyPressed->code == sf::Keyboard::Key::Space) {
-                if (dead) {
+                if (dead || won) {
                     restart();
                 } else {
                     started = true;
@@ -34,7 +35,7 @@ void Game::handleInput() {
             }
         }
         if (event->is<sf::Event::MouseButtonPressed>()) {
-            if (dead) {
+            if (dead || won) {
                 restart();
             } else {
                 started = true;
@@ -68,7 +69,8 @@ void Game::update(float dt) {
     }
 
     if (cameraX >= level.getLength()) {
-        dead = true;
+        won = true;
+        started = false;
     }
 }
 
@@ -124,6 +126,13 @@ void Game::render() {
             deadText.setFillColor(sf::Color(0xff, 0x5e, 0x5e));
             deadText.setPosition(sf::Vector2f(WIDTH / 2.f - 190.f, HEIGHT / 2.f - 20.f));
             window.draw(deadText);
+        }
+
+        if (won) {
+            sf::Text winText(font, "Level complete! - click to replay", 32);
+            winText.setFillColor(sf::Color(0x7c, 0xf2, 0x7c));
+            winText.setPosition(sf::Vector2f(WIDTH / 2.f - 240.f, HEIGHT / 2.f - 20.f));
+            window.draw(winText);
         }
     }
 

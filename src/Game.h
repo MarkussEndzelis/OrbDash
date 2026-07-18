@@ -20,6 +20,7 @@ private:
 
     float cameraX = 0.f;
     bool dead = false;
+    bool won = false;
     bool started = false;
 
     static constexpr float SCROLL_SPEED = 360.f;
