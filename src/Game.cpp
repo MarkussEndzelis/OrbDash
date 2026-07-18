@@ -5,7 +5,7 @@
 
 Game::Game()
     : window(sf::VideoMode(sf::Vector2u((unsigned int)WIDTH, (unsigned int)HEIGHT)), "OrbDash"),
-      level(Level::testLevel())
+      level(Level::loadFromFile("assets/levels/level1.txt"))
 {
     window.setFramerateLimit(144);
     fontLoaded = font.openFromFile("assets/font.ttf");
