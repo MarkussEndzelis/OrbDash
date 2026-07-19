@@ -31,6 +31,7 @@ void Game::startLevel(int index, const std::string& path){
     won = false;
     started = false;
     elapsedTime = 0.f;
+    boosting = false;
     state = GameState::Playing;
 }
 
@@ -131,7 +132,11 @@ void Game::update(float dt){
     if (state != GameState::Playing) return;
     if (dead || !started) return;
 
-    cameraX += SCROLL_SPEED * dt;
+    boosting = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) ||
+               sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+
+    float currentSpeed = SCROLL_SPEED * (boosting ? BOOST_MULTIPLIER : 1.f);
+    cameraX += currentSpeed * dt;
     elapsedTime += dt;
     float playerWorldX = 150.f + cameraX;
 
@@ -269,6 +274,12 @@ void Game::renderPlaying(){
     player.render(window, 150.f);
 
     if (fontLoaded) {
+        if (boosting && started && !dead && !won){
+            sf::Text boostText(font, "BOOST", 20);
+            boostText.setFillColor(sf::Color(0xff, 0xd0, 0x4d));
+            boostText.setPosition(sf::Vector2f(20.f, 20.f));
+            window.draw(boostText);
+        }
         float progress = std::min(100.f, (cameraX / level.getLength()) * 100.f);
         std::ostringstream ss;
         ss << std::fixed << std::setprecision(0) << progress << "%";

@@ -36,6 +36,8 @@ private:
     bool started = false;
 
     static constexpr float SCROLL_SPEED = 360.f;
+    static constexpr float BOOST_MULTIPLIER = 1.6f;
+    bool boosting = false;
 
     void handleInput();
     void update(float dt);
