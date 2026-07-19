@@ -2,6 +2,7 @@
 #include "CollisionUtils.h"
 #include <sstream>
 #include <iomanip>
+#include <fstream>
 
 Game::Game()
     : window(sf::VideoMode(sf::Vector2u((unsigned int)WIDTH, (unsigned int)HEIGHT)), "OrbDash"),
@@ -16,15 +17,20 @@ Game::Game()
         { "Level 3 - Ascent", "assets/levels/level3.txt"},
         { "Level 4 - Marathon", "assets/levels/level4.txt"}
     };
+
+    bestTimes.assign(levels.size(), -1.f);
+    loadBestTimes();
 }
 
-void Game::startLevel(const std::string& path){
+void Game::startLevel(int index, const std::string& path){
+    currentLevelIndex = index;
     level = Level::loadFromFile(path);
     player.reset();
     cameraX = 0.f;
     dead = false;
     won = false;
     started = false;
+    elapsedTime = 0.f;
     state = GameState::Playing;
 }
 
@@ -74,7 +80,7 @@ void Game::handleLevelSelectClick(sf::Vector2f mousePos){
     auto bounds = levelButtonBounds();
     for (size_t i = 0; i < bounds.size(); i++){
         if (bounds[i].contains(mousePos)){
-            startLevel(levels[i].path);
+            startLevel((int)i, levels[i].path);
             return;
         }
     }
@@ -126,6 +132,7 @@ void Game::update(float dt){
     if (dead || !started) return;
 
     cameraX += SCROLL_SPEED * dt;
+    elapsedTime += dt;
     float playerWorldX = 150.f + cameraX;
 
     float floorY = Player::getGroundY();
@@ -167,6 +174,14 @@ void Game::update(float dt){
     if (cameraX >= level.getLength()){
         won = true;
         started = false;
+
+        if (currentLevelIndex >= 0){
+            if (bestTimes[currentLevelIndex] < 0.f || elapsedTime < bestTimes[currentLevelIndex]){
+                bestTimes[currentLevelIndex] = elapsedTime;
+                saveBestTimes();
+            }
+            
+        }
     }
 }
 
@@ -211,6 +226,11 @@ void Game::renderLevelSelect(){
         label.setFillColor(sf::Color::White);
         label.setPosition(sf::Vector2f(bounds[i].position.x + 15.f, bounds[i].position.y + 30.f));
         window.draw(label);
+
+        sf::Text timeText(font, "Best: " + formatTime(bestTimes[i]), 16);
+        timeText.setFillColor(sf::Color(0xcc, 0xcc, 0xcc));
+        timeText.setPosition(sf::Vector2f(bounds[i].position.x + 15.f, bounds[i].position.y + 58.f));
+        window.draw(timeText);
     }
 }
 
@@ -277,9 +297,17 @@ void Game::renderPlaying(){
             winText.setFillColor(sf::Color(0x7c, 0xf2, 0x7c));
             winText.setPosition(sf::Vector2f(WIDTH / 2.f - 280.f, HEIGHT / 2.f - 20.f));
             window.draw(winText);
+
+            std::string bestStr = (currentLevelIndex >= 0) ? formatTime(bestTimes[currentLevelIndex]) : "--:--";
+            sf::Text timeText(font, "Time: " + formatTime(elapsedTime) + "  Best: " + bestStr, 22);
+            timeText.setFillColor(sf::Color::White);
+            timeText.setPosition(sf::Vector2f(WIDTH / 2.f - 150.f, HEIGHT / 2.f + 30.f));
+            window.draw(timeText);
         }
     }
 }
+
+
 
 void Game::render(){
     window.clear(sf::Color(0x1b, 0x1b, 0x2b));
@@ -304,4 +332,32 @@ void Game::run() {
         update(dt);
         render();
     }
+}
+
+void Game::loadBestTimes(){
+    std::ifstream in("besttimes.txt");
+    if(!in.is_open()) return;
+
+    for (size_t i = 0; i < bestTimes.size() && in; i++){
+        float t;
+        if (in >> t){
+            bestTimes[i] = t;
+        }
+    }
+}
+
+void Game::saveBestTimes(){
+    std::ofstream out("besttimes.txt");
+    for (float t : bestTimes){
+        out << t << "\n";
+    }
+}
+
+std::string Game::formatTime(float seconds) const {
+    if (seconds < 0.f) return "--:--";
+    int mins = (int)seconds / 60;
+    float secs = seconds - mins * 60;
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%02d:%05.2f", mins, secs);
+    return std::string(buf);
 }

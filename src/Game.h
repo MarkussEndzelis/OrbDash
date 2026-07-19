@@ -49,8 +49,16 @@ private:
     void handleMainMenuClick(sf::Vector2f mousePos);
     void handleLevelSelectClick(sf::Vector2f mousePos);
 
-    void startLevel(const std::string& path);
+    void startLevel(int index, const std::string& path);
 
     sf::FloatRect playButtonBounds() const;
     std::vector<sf::FloatRect> levelButtonBounds() const;
+
+    float elapsedTime = 0.f;
+    std::vector<float> bestTimes;
+    int currentLevelIndex = -1;
+
+    void loadBestTimes();
+    void saveBestTimes();
+    std::string formatTime(float seconds) const;
 };
