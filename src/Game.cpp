@@ -51,26 +51,39 @@ sf::FloatRect Game::playButtonBounds() const {
     return sf::FloatRect(sf::Vector2f(WIDTH / 2.f - 100.f, HEIGHT/ 2.f - 30.f), sf::Vector2f(200.f, 60.f));
 }
 
+Game::LevelGridLayout Game::computeLevelGridLayout() const {
+    LevelGridLayout L;
+    L.columns = 2;
+    L.boxWidth = 320.f;
+    L.boxHeight = 90.f;
+    L.spacingX = 30.f;
+    L.spacingY = 20.f;
+
+    int rows = (int)((levels.size() + L.columns - 1) / L.columns);
+    float totalWidth = L.columns * L.boxWidth + (L.columns - 1) * L.spacingX;
+    float totalHeight = rows * L.boxHeight + std::max(0, rows - 1) * L.spacingY;
+    L.startX = WIDTH / 2.f - totalWidth / 2.f;
+
+    L.viewportTop = 140.f;
+    L.viewportBottom = HEIGHT - 90.f;
+    float viewportHeight = L.viewportBottom - L.viewportTop;
+
+    L.maxScroll = std::max(0.f, totalHeight - viewportHeight);
+    L.startY = (totalHeight <= viewportHeight) ? (L.viewportTop + (viewportHeight - totalHeight) / 2.f) : L.viewportTop;
+
+    return L;
+}
+
 std::vector<sf::FloatRect> Game::levelButtonBounds() const {
     std::vector<sf::FloatRect> bounds;
-    int columns = 2;
-    float boxWidth = 320.f;
-    float boxHeight = 90.f;
-    float spacingX = 30.f;
-    float spacingY = 20.f;
-
-    int rows = (int)((levels.size() + columns - 1) / columns);
-    float totalWidth = columns * boxWidth + (columns - 1) * spacingX;
-    float totalHeight = rows * boxHeight + (rows - 1) * spacingY;
-    float startX = WIDTH / 2.f - totalWidth / 2.f;
-    float startY = HEIGHT / 2.f - totalHeight / 2.f + 20.f;
+    LevelGridLayout L = computeLevelGridLayout();
 
     for (size_t i = 0; i < levels.size(); i++){
-        int col = i % columns;
-        int row = i / columns;
-        float x = startX + col * (boxWidth + spacingX);
-        float y = startY + row * (boxHeight + spacingY);
-        bounds.push_back(sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(boxWidth, boxHeight)));
+        int col = i % L.columns;
+        int row = i / L.columns;
+        float x = L.startX + col * (L.boxWidth + L.spacingX);
+        float y = L.startY + row * (L.boxHeight + L.spacingY) - levelSelectScrollY;
+        bounds.push_back(sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(L.boxWidth, L.boxHeight)));      
     }
     return bounds;
 }
@@ -91,7 +104,16 @@ void Game::handleLevelSelectClick(sf::Vector2f mousePos){
         return;
     }
 
+    LevelGridLayout L = computeLevelGridLayout();
     auto bounds = levelButtonBounds();
+    for (size_t i = 0; i < bounds.size(); i++){
+        if (bounds[i].position.y + bounds[i].size.y <= L.viewportTop) continue;
+        if (bounds[i].position.y >= L.viewportBottom) continue;
+        if (bounds[i].contains(mousePos)){
+            startLevel((int)i, levels[i].path);
+            return;
+        }
+    }
 }
 
 void Game::handleInput() {
@@ -153,6 +175,14 @@ void Game::handleInput() {
             if (state == GameState::Editor){
                 sf::Vector2f mousePos((float)mouseReleased->position.x, (float)mouseReleased->position.y);
                 handleEditorMouseUp(mousePos);
+            }
+        }
+
+        if (const auto* wheel = event->getIf<sf::Event::MouseWheelScrolled>()){
+            if (state == GameState::LevelSelect){
+                LevelGridLayout L = computeLevelGridLayout();
+                levelSelectScrollY -= wheel->delta * 40.f;
+                levelSelectScrollY = std::clamp(levelSelectScrollY, 0.f, L.maxScroll);
             }
         }
 
@@ -254,8 +284,17 @@ void Game::renderLevelSelect(){
     title.setPosition(sf::Vector2f(WIDTH / 2.f - 150.f, 80.f));
     window.draw(title);
 
+    LevelGridLayout L = computeLevelGridLayout();
     auto bounds = levelButtonBounds();
+
+    sf::View clipView(sf::FloatRect(sf::Vector2f(0.f, L.viewportTop), sf::Vector2f(WIDTH, L.viewportBottom - L.viewportTop)));
+    clipView.setViewport(sf::FloatRect(sf::Vector2f(0.f, L.viewportTop / HEIGHT), sf::Vector2f(1.f, (L.viewportBottom - L.viewportTop) / HEIGHT)));
+    window.setView(clipView);
+
     for (size_t i = 0; i < bounds.size(); i++){
+        if (bounds[i].position.y + bounds[i].size.y <= L.viewportTop) continue;
+        if (bounds[i].position.y >= L.viewportBottom) continue;
+
         sf::RectangleShape box(bounds[i].size);
         box.setPosition(bounds[i].position);
         box.setFillColor(sf::Color(0x2c, 0x2c, 0x44));
@@ -272,6 +311,15 @@ void Game::renderLevelSelect(){
         timeText.setFillColor(sf::Color(0xcc, 0xcc, 0xcc));
         timeText.setPosition(sf::Vector2f(bounds[i].position.x + 15.f, bounds[i].position.y + 58.f));
         window.draw(timeText);
+    }
+
+    window.setView(window.getDefaultView());
+
+    if (L.maxScroll > 0.f){
+        sf::Text scrollHint(font, "Scroll for more levels", 14);
+        scrollHint.setFillColor(sf::Color(0xaa, 0xaa, 0xaa));
+        scrollHint.setPosition(sf::Vector2f(WIDTH / 2.f - 80.f, L.viewportBottom + 4.f));
+        window.draw(scrollHint);
     }
 
     sf::FloatRect createB = createLevelButtonBounds();

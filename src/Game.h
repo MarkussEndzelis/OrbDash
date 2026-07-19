@@ -53,6 +53,14 @@ private:
 
     void startLevel(int index, const std::string& path);
 
+    struct LevelGridLayout {
+        float startX, startY, boxWidth, boxHeight, spacingX, spacingY;
+        int columns;
+        float viewportTop, viewportBottom, maxScroll;
+    };
+    LevelGridLayout computeLevelGridLayout() const;
+    float levelSelectScrollY = 0.f;
+
     sf::FloatRect playButtonBounds() const;
     std::vector<sf::FloatRect> levelButtonBounds() const;
 
