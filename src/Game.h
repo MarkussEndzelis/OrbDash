@@ -5,7 +5,7 @@
 #include "Player.h"
 #include "Level.h"
 
-enum class GameState { MainMenu, LevelSelect, Playing};
+enum class GameState { MainMenu, LevelSelect, Playing, Editor};
 
 struct LevelInfo {
     std::string name;
@@ -63,4 +63,32 @@ private:
     void loadBestTimes();
     void saveBestTimes();
     std::string formatTime(float seconds) const;
+
+    static constexpr float EDITOR_TOOLBAR_HEIGHT = 70.f;
+    enum class EditorTool { Spike, Block, Platform, Eraser};
+
+    std::vector<Obstacle> editorObstacles;
+    float editorCameraX = 0.f;
+    EditorTool editorTool = EditorTool::Spike;
+    bool editorDragging = false;
+    float editorDragStartWorldX = 0.f;
+    bool editorNaming = false;
+    std::string editorNameInput;
+    int nextCustomLevelNumber = 1;
+
+    void updateEditor(float dt);
+    void renderEditor();
+    void handleEditorMouseDown(sf::Vector2f mousePos);
+    void handleEditorMouseUp(sf::Vector2f mousePos);
+    void handleEditorTextEntered(char32_t unicode);
+    void confirmEditorSave();
+    void eraseObstacleNear(float worldX);
+    void loadCustomLevels();
+    void drawObstacleShape(const Obstacle& obs, float screenX);
+
+    std::vector<sf::FloatRect> editorToolButtonBounds() const;
+    sf::FloatRect editorClearButtonBounds() const;
+    sf::FloatRect editorSaveButtonBounds() const;
+    sf::FloatRect editorBackButtonBounds() const;
+    sf::FloatRect createLevelButtonBounds() const;
 };

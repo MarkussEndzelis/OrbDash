@@ -3,6 +3,8 @@
 #include <sstream>
 #include <iomanip>
 #include <fstream>
+#include <algorithm>
+#include <cctype>
 
 Game::Game()
     : window(sf::VideoMode(sf::Vector2u((unsigned int)WIDTH, (unsigned int)HEIGHT)), "OrbDash"),
@@ -17,6 +19,8 @@ Game::Game()
         { "Level 3 - Ascent", "assets/levels/level3.txt"},
         { "Level 4 - Marathon", "assets/levels/level4.txt"}
     };
+
+    loadCustomLevels();
 
     bestTimes.assign(levels.size(), -1.f);
     loadBestTimes();
@@ -78,13 +82,16 @@ void Game::handleMainMenuClick(sf::Vector2f mousePos){
 }
 
 void Game::handleLevelSelectClick(sf::Vector2f mousePos){
-    auto bounds = levelButtonBounds();
-    for (size_t i = 0; i < bounds.size(); i++){
-        if (bounds[i].contains(mousePos)){
-            startLevel((int)i, levels[i].path);
-            return;
-        }
+    if (createLevelButtonBounds().contains(mousePos)){
+        editorObstacles.clear();
+        editorCameraX = 0.f;
+        editorTool = EditorTool::Spike;
+        editorNaming = false;
+        state = GameState::Editor;
+        return;
     }
+
+    auto bounds = levelButtonBounds();
 }
 
 void Game::handleInput() {
@@ -107,6 +114,20 @@ void Game::handleInput() {
                     state = GameState::LevelSelect;
                 }
             }
+
+            if (state == GameState::Editor){
+                if (editorNaming){
+                    if (keyPressed->code == sf::Keyboard::Key::Enter){
+                        confirmEditorSave();
+                    }else if (keyPressed->code == sf::Keyboard::Key::Escape){
+                        editorNaming = false;
+                    }else if (keyPressed->code == sf::Keyboard::Key::Backspace){
+                        if (!editorNameInput.empty()) editorNameInput.pop_back();
+                    }
+                }else if(keyPressed->code == sf::Keyboard::Key::Escape){
+                    state = GameState::LevelSelect;
+                }
+            }
         }
         if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>()){
             sf::Vector2f mousePos((float)mousePressed->position.x, (float)mousePressed->position.y);
@@ -123,6 +144,21 @@ void Game::handleInput() {
                 }else {
                     player.jump();
                 }
+            }else if (state == GameState::Editor){
+                handleEditorMouseDown(mousePos);
+            }
+        }
+
+        if (const auto* mouseReleased = event->getIf<sf::Event::MouseButtonReleased>()){
+            if (state == GameState::Editor){
+                sf::Vector2f mousePos((float)mouseReleased->position.x, (float)mouseReleased->position.y);
+                handleEditorMouseUp(mousePos);
+            }
+        }
+
+        if (const auto* textEntered = event->getIf<sf::Event::TextEntered>()){
+            if (state == GameState::Editor && editorNaming){
+                handleEditorTextEntered(textEntered->unicode);
             }
         }
     }
@@ -237,6 +273,17 @@ void Game::renderLevelSelect(){
         timeText.setPosition(sf::Vector2f(bounds[i].position.x + 15.f, bounds[i].position.y + 58.f));
         window.draw(timeText);
     }
+
+    sf::FloatRect createB = createLevelButtonBounds();
+    sf::RectangleShape createBtn(createB.size);
+    createBtn.setPosition(createB.position);
+    createBtn.setFillColor(sf::Color(0x5e, 0xc4, 0xff));
+    window.draw(createBtn);
+
+    sf::Text createLabel(font, "+ CREATE LEVEL", 18);
+    createLabel.setFillColor(sf::Color(0x1b, 0x1b, 0x2b));
+    createLabel.setPosition(sf::Vector2f(createB.position.x + 25.f, createB.position.y + 13.f));
+    window.draw(createLabel);
 }
 
 void Game::renderPlaying(){
@@ -248,27 +295,7 @@ void Game::renderPlaying(){
     for (const auto& obs : level.getObstacles()){
         float screenX = obs.worldX - cameraX;
         if (screenX < -100.f || screenX > WIDTH + 100.f) continue;
-
-        if (obs.type == ObstacleType::Block){
-            sf::RectangleShape rect(sf::Vector2f(obs.width, obs.height));
-            rect.setPosition(sf::Vector2f(screenX, Player::getGroundY() - obs.height));
-            rect.setFillColor(sf::Color(0xe8, 0xa3, 0x3d));
-            window.draw(rect);
-        }else if (obs.type == ObstacleType::Spike){
-            sf::ConvexShape tri(3);
-            float baseY = Player::getGroundY();
-            tri.setPoint(0, sf::Vector2f(screenX, baseY));
-            tri.setPoint(1, sf::Vector2f(screenX + obs.width, baseY));
-            tri.setPoint(2, sf::Vector2f(screenX + obs.width / 2.f, baseY - obs.height));
-            tri.setFillColor(sf::Color(0xe8, 0xa3, 0x3d));
-            window.draw(tri);
-        }else if (obs.type == ObstacleType::Platform){
-            float topY = Player::getGroundY() - obs.height;
-            sf::RectangleShape plat(sf::Vector2f(obs.width, 14.f));
-            plat.setPosition(sf::Vector2f(screenX, topY));
-            plat.setFillColor(sf::Color(0x7c, 0xf2, 0x7c));
-            window.draw(plat);
-        }
+        drawObstacleShape(obs, screenX);
     }
 
     player.render(window, 150.f);
@@ -329,6 +356,8 @@ void Game::render(){
         renderLevelSelect();
     }else if (state == GameState::Playing){
         renderPlaying();
+    }else if (state == GameState::Editor){
+        renderEditor();
     }
     window.display();
 }
@@ -340,7 +369,11 @@ void Game::run() {
         if (dt > 0.05f) dt = 0.05f;
 
         handleInput();
-        update(dt);
+        if (state == GameState::Editor){
+            updateEditor(dt);
+        }else{
+            update(dt);
+        }
         render();
     }
 }
@@ -371,4 +404,320 @@ std::string Game::formatTime(float seconds) const {
     char buf[16];
     snprintf(buf, sizeof(buf), "%02d:%05.2f", mins, secs);
     return std::string(buf);
+}
+
+void Game::loadCustomLevels(){
+    std::ifstream in("assets/levels/custom_levels.txt");
+    if (!in.is_open()) return;
+
+    std::string line;
+    int count = 0;
+    while (std::getline(in, line)){
+        if (line.empty()) continue;
+        size_t sep = line.find('|');
+        if (sep == std::string::npos) continue;
+
+        std::string name = line.substr(0, sep);
+        std::string path = line.substr(sep + 1);
+        levels.push_back({name, path});
+        count++;
+    }
+    nextCustomLevelNumber = count + 1;
+}
+
+sf::FloatRect Game::createLevelButtonBounds() const {
+    return sf::FloatRect(sf::Vector2f(WIDTH / 2.f - 110.f, HEIGHT - 65.f), sf::Vector2f(220.f, 45.f));
+}
+
+std::vector<sf::FloatRect> Game::editorToolButtonBounds() const {
+    std::vector<sf::FloatRect> bounds;
+    float w = 100.f, h = 44.f, gap = 10.f, x = 20.f, y = 13.f;
+    for (int i = 0; i < 4; i++){
+        bounds.push_back(sf::FloatRect(sf::Vector2f(x + i * (w + gap), y), sf::Vector2f(w, h)));
+    }
+    return bounds;
+}
+
+sf::FloatRect Game::editorClearButtonBounds() const {
+    return sf::FloatRect(sf::Vector2f(500.f, 13.f), sf::Vector2f(90.f, 44.f));
+}
+
+sf::FloatRect Game::editorSaveButtonBounds() const {
+    return sf::FloatRect(sf::Vector2f(600.f, 13.f), sf::Vector2f(90.f, 44.f));
+}
+
+sf::FloatRect Game::editorBackButtonBounds() const {
+    return sf::FloatRect(sf::Vector2f(780.f, 13.f), sf::Vector2f(100.f, 44.f));
+}
+
+void Game::drawObstacleShape(const Obstacle& obs, float screenX){
+    if (obs.type == ObstacleType::Block){
+        sf::RectangleShape rect(sf::Vector2f(obs.width, obs.height));
+        rect.setPosition(sf::Vector2f(screenX, Player::getGroundY() - obs.height));
+        rect.setFillColor(sf::Color(0xe8, 0xa3, 0x3d));
+        window.draw(rect);
+    }else if (obs.type == ObstacleType::Spike){
+        sf::ConvexShape tri(3);
+        float baseY = Player::getGroundY();
+        tri.setPoint(0, sf::Vector2f(screenX, baseY));
+        tri.setPoint(1, sf::Vector2f(screenX + obs.width, baseY));
+        tri.setPoint(2, sf::Vector2f(screenX + obs.width / 2.f, baseY - obs.height));
+        tri.setFillColor(sf::Color(0xe8, 0xa3, 0x3d));
+        window.draw(tri);
+    }else if (obs.type == ObstacleType::Platform){
+        float topY = Player::getGroundY() - obs.height;
+        sf::RectangleShape plat(sf::Vector2f(obs.width, 14.f));
+        plat.setPosition(sf::Vector2f(screenX, topY));
+        plat.setFillColor(sf::Color(0x7c, 0xf2, 0x7c));
+        window.draw(plat);
+    }
+}
+
+void Game::eraseObstacleNear(float worldX){
+    for (size_t i = 0; i < editorObstacles.size(); i++){
+        const auto& obs = editorObstacles[i];
+        float left = obs.worldX - 10.f;
+        float right = obs.worldX + obs.width + 10.f;
+        if (worldX >= left && worldX <= right){
+            editorObstacles.erase(editorObstacles.begin() + i);
+            return;
+        }
+    }
+}
+
+void Game::handleEditorMouseDown(sf::Vector2f mousePos){
+    if (editorNaming) return;
+
+    auto toolBounds = editorToolButtonBounds();
+    for (size_t i = 0; i < toolBounds.size(); i++){
+        if (toolBounds[i].contains(mousePos)){
+            editorTool = (EditorTool)i;
+            return;
+        }
+    }
+    if (editorSaveButtonBounds().contains(mousePos)){
+        editorNaming = true;
+        editorNameInput.clear();
+        return;
+    }
+    if (editorClearButtonBounds().contains(mousePos)){
+        editorObstacles.clear();
+        return;
+    }
+    if (editorBackButtonBounds().contains(mousePos)){
+        state = GameState::LevelSelect;
+        return;
+    }
+
+    if (mousePos.y < EDITOR_TOOLBAR_HEIGHT) return;
+
+    float worldX = mousePos.x + editorCameraX;
+
+    if (editorTool == EditorTool::Spike){
+        editorObstacles.push_back({ObstacleType::Spike, worldX, 40.f, 40.f});
+    }else if (editorTool == EditorTool::Eraser){
+        eraseObstacleNear(worldX);
+    }else{
+        editorDragging = true;
+        editorDragStartWorldX = worldX;
+    }
+}
+
+void Game::handleEditorMouseUp(sf::Vector2f mousePos){
+    if (!editorDragging) return;
+    editorDragging = false;
+
+    float worldX = mousePos.x + editorCameraX;
+    float left = std::min(editorDragStartWorldX, worldX);
+
+    if (editorTool == EditorTool::Block){
+        float size = std::max(std::abs(worldX - editorDragStartWorldX), 20.f);
+        editorObstacles.push_back({ObstacleType::Block, left, size, size});
+    }else if (editorTool == EditorTool::Platform){
+        float width = std::max(std::abs(worldX - editorDragStartWorldX), 20.f);
+        float height = Player::getGroundY() - mousePos.y;
+        height = std::clamp(height, 30.f, 220.f);
+        editorObstacles.push_back({ObstacleType::Platform, left, width, height});
+    }
+}
+
+void Game::handleEditorTextEntered(char32_t unicode){
+    if (unicode < 32 || unicode > 126) return;
+    if (editorNameInput.size() >= 24) return;
+    editorNameInput += (char)unicode;
+}
+
+void Game::confirmEditorSave(){
+    if (editorNameInput.empty()) return;
+    editorNaming = false;
+
+    std::string displayName = editorNameInput;
+    std::string slug;
+    for (char c : displayName){
+        if (std::isalnum((unsigned char)c)) slug += (char)std::tolower((unsigned char)c);
+        else if (c == ' ') slug += '_';
+    }
+    if (slug.empty()) slug = "level";
+
+    std::string path = "assets/levels/custom_" + slug + "_" + std::to_string(nextCustomLevelNumber) + ".txt";
+    nextCustomLevelNumber++;
+
+    float length = 800.f;
+    for (const auto& obs : editorObstacles){
+        length = std::max(length, obs.worldX + obs.width + 300.f);
+    }
+
+    std::ofstream out(path);
+    out << "LENGTH " << length << "\n";
+    for (const auto& obs : editorObstacles){
+        if (obs.type == ObstacleType::Spike){
+            out << "SPIKE " << obs.worldX << "\n";
+        }else if (obs.type == ObstacleType::Block){
+            out << "BLOCK " << obs.worldX << " " << obs.width << "\n";
+        }else if (obs.type == ObstacleType::Platform){
+            out << "PLATFORM " << obs.worldX << " " << obs.width << " " << obs.height << "\n";
+        }
+    }
+    out.close();
+
+    std::ofstream manifest("assets/levels/custom_levels.txt", std::ios::app);
+    manifest << displayName << "|" << path << "\n";
+    manifest.close();
+
+    levels.push_back({displayName, path});
+    bestTimes.push_back(-1.f);
+
+    editorObstacles.clear();
+    editorCameraX = 0.f;
+    editorNameInput.clear();
+    state = GameState::LevelSelect;
+}
+
+void Game::updateEditor(float dt){
+    if (editorNaming) return;
+
+    float panSpeed = 700.f;
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A)){
+        editorCameraX = std::max(0.f, editorCameraX - panSpeed * dt);
+    }
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D)){
+        editorCameraX += panSpeed * dt;
+    }
+}
+
+void Game::renderEditor(){
+    if (!fontLoaded) return;
+
+    sf::RectangleShape ground(sf::Vector2f(WIDTH, HEIGHT - Player::getGroundY()));
+    ground.setPosition(sf::Vector2f(0.f, Player::getGroundY()));
+    ground.setFillColor(sf::Color(0x2c, 0x2c, 0x44));
+    window.draw(ground);
+
+    for (const auto& obs : editorObstacles){
+        float screenX = obs.worldX - editorCameraX;
+        if (screenX < -150.f || screenX > WIDTH + 150.f) continue;
+        drawObstacleShape(obs, screenX);
+    }
+
+    if (editorDragging){
+        sf::Vector2i mp = sf::Mouse::getPosition(window);
+        float worldX = (float)mp.x + editorCameraX;
+        float left = std::min(editorDragStartWorldX, worldX);
+        float screenX = left - editorCameraX;
+
+        if (editorTool == EditorTool::Block){
+            float size = std::max(std::abs(worldX - editorDragStartWorldX), 20.f);
+            sf::RectangleShape rect(sf::Vector2f(size, size));
+            rect.setPosition(sf::Vector2f(screenX, Player::getGroundY() - size));
+            rect.setFillColor(sf::Color(0xe8, 0xa3, 0x3d, 140));
+            window.draw(rect);
+        }else if (editorTool == EditorTool::Platform){
+            float width = std::max(std::abs(worldX - editorDragStartWorldX), 20.f);
+            float height = std::clamp(Player::getGroundY() - (float)mp.y, 30.f, 220.f);
+            sf::RectangleShape plat(sf::Vector2f(width, 14.f));
+            plat.setPosition(sf::Vector2f(screenX, Player::getGroundY() - height));
+            plat.setFillColor(sf::Color(0x7c, 0xf2, 0x7c, 140));
+            window.draw(plat);
+        }
+    }
+
+    sf::RectangleShape bar(sf::Vector2f(WIDTH, EDITOR_TOOLBAR_HEIGHT));
+    bar.setPosition(sf::Vector2f(0.f, 0.f));
+    bar.setFillColor(sf::Color(0x14, 0x14, 0x22));
+    window.draw(bar);
+
+    auto toolBounds = editorToolButtonBounds();
+    const char* toolNames[4] = {"SPIKE", "BLOCK", "PLATFORM", "ERASE"};
+    for (int i = 0; i < 4; i++){
+        sf::RectangleShape btn(toolBounds[i].size);
+        btn.setPosition(toolBounds[i].position);
+        bool selected = ((int)editorTool == i);
+        btn.setFillColor(selected ? sf::Color(0x5e, 0xc4, 0xff) : sf::Color(0x2c, 0x2c, 0x44));
+        btn.setOutlineColor(sf::Color(0xe8, 0xa3, 0x3d));
+        btn.setOutlineThickness(1.f);
+        window.draw(btn);
+
+        sf::Text label(font, toolNames[i], 14);
+        label.setFillColor(selected ? sf::Color(0x1b, 0x1b, 0x2b) : sf::Color::White);
+        label.setPosition(sf::Vector2f(toolBounds[i].position.x + 10.f, toolBounds[i].position.y + 13.f));
+        window.draw(label);
+    }
+
+    sf::FloatRect clearB = editorClearButtonBounds();
+    sf::RectangleShape clearBtn(clearB.size);
+    clearBtn.setPosition(clearB.position);
+    clearBtn.setFillColor(sf::Color(0x44, 0x2c, 0x2c));
+    window.draw(clearBtn);
+    sf::Text clearLabel(font, "CLEAR", 14);
+    clearLabel.setFillColor(sf::Color::White);
+    clearLabel.setPosition(sf::Vector2f(clearB.position.x + 12.f, clearB.position.y + 13.f));
+    window.draw(clearLabel);
+
+    sf::FloatRect saveB = editorSaveButtonBounds();
+    sf::RectangleShape saveBtn(saveB.size);
+    saveBtn.setPosition(saveB.position);
+    saveBtn.setFillColor(sf::Color(0x2c, 0x44, 0x2c));
+    window.draw(saveBtn);
+    sf::Text saveLabel(font, "SAVE", 14);
+    saveLabel.setFillColor(sf::Color::White);
+    saveLabel.setPosition(sf::Vector2f(saveB.position.x + 20.f, saveB.position.y + 13.f));
+    window.draw(saveLabel);
+
+    sf::FloatRect backB = editorBackButtonBounds();
+    sf::RectangleShape backBtn(backB.size);
+    backBtn.setPosition(backB.position);
+    backBtn.setFillColor(sf::Color(0x2c, 0x2c, 0x44));
+    window.draw(backBtn);
+    sf::Text backLabel(font, "BACK", 14);
+    backLabel.setFillColor(sf::Color::White);
+    backLabel.setPosition(sf::Vector2f(backB.position.x + 25.f, backB.position.y + 13.f));
+    window.draw(backLabel);
+
+    sf::Text hint(font, "A/D or Arrows to scroll  |  Click = place  |  Drag = size (Block/Platform)", 14);
+    hint.setFillColor(sf::Color(0xaa, 0xaa, 0xaa));
+    hint.setPosition(sf::Vector2(20.f, HEIGHT - 30.f));
+    window.draw(hint);
+
+    if (editorNaming){
+        sf::RectangleShape overlay(sf::Vector2f(WIDTH, HEIGHT));
+        overlay.setFillColor(sf::Color(0, 0, 0, 160));
+        window.draw(overlay);
+
+        sf::RectangleShape box(sf::Vector2f(400.f, 140.f));
+        box.setPosition(sf::Vector2f(WIDTH / 2.f - 200.f, HEIGHT / 2.f - 70.f));
+        box.setFillColor(sf::Color(0x2c, 0x2c, 0x44));
+        box.setOutlineColor(sf::Color(0xe8, 0xa3, 0x3d));
+        box.setOutlineThickness(2.f);
+        window.draw(box);
+
+        sf::Text prompt(font, "Name your level (Enter to save):", 16);
+        prompt.setFillColor(sf::Color::White);
+        prompt.setPosition(sf::Vector2f(WIDTH / 2.f - 180.f, HEIGHT / 2.f - 50.f));
+        window.draw(prompt);
+
+        sf::Text nameText(font, editorNameInput + "_", 22);
+        nameText.setFillColor(sf::Color(0x7c, 0xf2, 0x7c));
+        nameText.setPosition(sf::Vector2f(WIDTH / 2.f - 180.f, HEIGHT / 2.f - 10.f));
+        window.draw(nameText);
+    }
 }
