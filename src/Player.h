@@ -9,7 +9,7 @@ public:
 
     void reset();
     void jump();
-    void update(float dt);
+    void update(float dt, float floorY);
     void render(sf::RenderWindow& window, float screenX);
 
     float getY() const { return y; }

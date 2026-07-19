@@ -54,6 +54,10 @@ Level Level::loadFromFile(const std::string& path){
                 size = 40.f;
             }
             level.obstacles.push_back({ ObstacleType::Block, x, size, size});
+        }else if (keyword == "PLATFORM"){
+            float x, w, h;
+            iss >> x >> w >> h;
+            level.obstacles.push_back({ObstacleType::Platform, x, w, h});
         }
     }
 

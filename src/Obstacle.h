@@ -1,6 +1,6 @@
 #pragma once
 
-enum class ObstacleType {Block, Spike};
+enum class ObstacleType {Block, Spike, Platform};
 
 struct Obstacle{
     ObstacleType type;

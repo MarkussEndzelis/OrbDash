@@ -20,11 +20,11 @@ void Player::jump() {
     }
 }
 
-void Player::update(float dt) {
+void Player::update(float dt, float floorY) {
     velocityY += GRAVITY * dt;
     y += velocityY * dt;
 
-    float floor = getGroundY() - RADIUS;
+    float floor = floorY - RADIUS;
     if (y >= floor) {
         y = floor;
         velocityY = 0.f;

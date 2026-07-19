@@ -12,7 +12,9 @@ Game::Game()
 
     levels = {
         { "Level 1 - Warmup", "assets/levels/level1.txt"},
-        { "Level 2 - Rush", "assets/levels/level2.txt"}
+        { "Level 2 - Rush", "assets/levels/level2.txt"},
+        { "Level 3 - Ascent", "assets/levels/level3.txt"},
+        { "Level 4 - Marathon", "assets/levels/level4.txt"}
     };
 }
 
@@ -37,17 +39,26 @@ void Game::restart() {
 sf::FloatRect Game::playButtonBounds() const {
     return sf::FloatRect(sf::Vector2f(WIDTH / 2.f - 100.f, HEIGHT/ 2.f - 30.f), sf::Vector2f(200.f, 60.f));
 }
+
 std::vector<sf::FloatRect> Game::levelButtonBounds() const {
     std::vector<sf::FloatRect> bounds;
-    float boxWidth = 260.f;
-    float boxHeight = 80.f;
-    float spacing = 30.f;
-    float totalWidth = levels.size() * boxWidth + (levels.size() - 1) * spacing;
+    int columns = 2;
+    float boxWidth = 320.f;
+    float boxHeight = 90.f;
+    float spacingX = 30.f;
+    float spacingY = 20.f;
+
+    int rows = (int)((levels.size() + columns - 1) / columns);
+    float totalWidth = columns * boxWidth + (columns - 1) * spacingX;
+    float totalHeight = rows * boxHeight + (rows - 1) * spacingY;
     float startX = WIDTH / 2.f - totalWidth / 2.f;
-    float y = HEIGHT / 2.f - boxHeight / 2.f;
+    float startY = HEIGHT / 2.f - totalHeight / 2.f + 20.f;
 
     for (size_t i = 0; i < levels.size(); i++){
-        float x = startX + i * (boxWidth + spacing);
+        int col = i % columns;
+        int row = i / columns;
+        float x = startX + col * (boxWidth + spacingX);
+        float y = startY + row * (boxHeight + spacingY);
         bounds.push_back(sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(boxWidth, boxHeight)));
     }
     return bounds;
@@ -110,23 +121,42 @@ void Game::handleInput() {
     }
 }
 
-void Game::update(float dt) {
+void Game::update(float dt){
     if (state != GameState::Playing) return;
     if (dead || !started) return;
 
     cameraX += SCROLL_SPEED * dt;
-    player.update(dt);
-
     float playerWorldX = 150.f + cameraX;
-    for (const auto& obs : level.getObstacles()) {
+
+    float floorY = Player::getGroundY();
+    for (const auto& obs : level.getObstacles()){
+        if (obs.type != ObstacleType::Platform) continue;
+
+        float left = obs.worldX;
+        float right = obs.worldX + obs.width;
+        if (playerWorldX + Player::RADIUS < left || playerWorldX - Player::RADIUS > right) continue;
+
+        float platformTop = Player::getGroundY() - obs.height;
+        if (player.getY() - Player::RADIUS <= platformTop + 1.f){
+            if (platformTop < floorY){
+                floorY = platformTop;
+            }
+        }
+    }
+
+    player.update(dt, floorY);
+
+    for (const auto& obs : level.getObstacles()){
+        if (obs.type == ObstacleType::Platform) continue;
+
         bool hit;
-        if (obs.type == ObstacleType::Block) {
+        if (obs.type == ObstacleType::Block){
             float top = Player::getGroundY() - obs.height;
             hit = CollisionUtils::circleRectCollides(playerWorldX, player.getY(), Player::RADIUS,
-                    obs.worldX, top, obs.width, obs.height);
-        } else {
+                obs.worldX, top, obs.width, obs.height);
+        }else {
             hit = CollisionUtils::circleTriangleCollides(playerWorldX, player.getY(), Player::RADIUS,
-                    obs.worldX, Player::getGroundY(), obs.width, obs.height);
+                obs.worldX, Player::getGroundY(), obs.width, obs.height);
         }
         if (hit) {
             dead = true;
@@ -134,7 +164,7 @@ void Game::update(float dt) {
         }
     }
 
-    if (cameraX >= level.getLength()) {
+    if (cameraX >= level.getLength()){
         won = true;
         started = false;
     }
@@ -199,7 +229,7 @@ void Game::renderPlaying(){
             rect.setPosition(sf::Vector2f(screenX, Player::getGroundY() - obs.height));
             rect.setFillColor(sf::Color(0xe8, 0xa3, 0x3d));
             window.draw(rect);
-        }else {
+        }else if (obs.type == ObstacleType::Spike){
             sf::ConvexShape tri(3);
             float baseY = Player::getGroundY();
             tri.setPoint(0, sf::Vector2f(screenX, baseY));
@@ -207,6 +237,12 @@ void Game::renderPlaying(){
             tri.setPoint(2, sf::Vector2f(screenX + obs.width / 2.f, baseY - obs.height));
             tri.setFillColor(sf::Color(0xe8, 0xa3, 0x3d));
             window.draw(tri);
+        }else if (obs.type == ObstacleType::Platform){
+            float topY = Player::getGroundY() - obs.height;
+            sf::RectangleShape plat(sf::Vector2f(obs.width, 14.f));
+            plat.setPosition(sf::Vector2f(screenX, topY));
+            plat.setFillColor(sf::Color(0x7c, 0xf2, 0x7c));
+            window.draw(plat);
         }
     }
 
