@@ -18,7 +18,12 @@ Game::Game()
         { "Level 1 - Warmup", "assets/levels/level1.txt"},
         { "Level 2 - Rush", "assets/levels/level2.txt"},
         { "Level 3 - Ascent", "assets/levels/level3.txt"},
-        { "Level 4 - Marathon", "assets/levels/level4.txt"}
+        { "Level 4 - Marathon", "assets/levels/level4.txt"},
+        { "Level 5 - Overdrive", "assets/levels/level5.txt"},
+        { "Level 6 - Gauntlet", "assets/levels/level6.txt"},
+        { "Level 7 - Vertigo", "assets/levels/level7.txt"},
+        { "Level 8 - Endgame", "assets/levels/level8.txt"}
+
     };
 
     loadCustomLevels();
