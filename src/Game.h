@@ -5,7 +5,7 @@
 #include "Player.h"
 #include "Level.h"
 
-enum class GameState { MainMenu, LevelSelect, Playing, Editor};
+enum class GameState { MainMenu, LevelSelect, Playing, Editor, Skins};
 
 struct LevelInfo {
     std::string name;
@@ -99,4 +99,32 @@ private:
     sf::FloatRect editorSaveButtonBounds() const;
     sf::FloatRect editorBackButtonBounds() const;
     sf::FloatRect createLevelButtonBounds() const;
+
+
+    struct SkinInfo {
+        std::string name;
+        sf::Color color;
+        int unlockLevelIndex;
+        bool isCustom = false;
+    };
+    static constexpr int CUSTOM_SKIN_INDEX = 5;
+
+    std::vector<SkinInfo> skins;
+    int selectedSkin = 0;
+    bool editingCustomSkin = false;
+    int draggingSlider = -1;
+
+    void handleSkinsClick(sf::Vector2f mousePos);
+    void updateSkins(float dt);
+    void renderSkins();
+    void applySelectedSkin();
+    void loadSkinsData();
+    void saveSkinsData();
+    bool isSkinUnlocked(int index) const;
+
+    std::vector<sf::FloatRect> skinButtonBounds() const;
+    sf::FloatRect skinsMenuButtonBounds() const;
+    sf::FloatRect skinsBackButtonBounds() const;
+    sf::FloatRect skinSliderBounds(int index) const;
+    sf::FloatRect skinDoneEditingButtonBounds() const;
 };

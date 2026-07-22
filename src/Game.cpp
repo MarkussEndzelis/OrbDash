@@ -5,6 +5,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 
 Game::Game()
     : window(sf::VideoMode(sf::Vector2u((unsigned int)WIDTH, (unsigned int)HEIGHT)), "OrbDash"),
@@ -24,6 +25,18 @@ Game::Game()
 
     bestTimes.assign(levels.size(), -1.f);
     loadBestTimes();
+
+    skins = {
+        {"Default", sf::Color(0x5e, 0xc4, 0xff), -1, false},
+        {"Ember", sf::Color(0xff, 0x6b, 0x35), 0, false},
+        {"Nova", sf::Color(0xc7, 0x6b, 0xff), 1, false},
+        {"Verdant", sf::Color(0x4d, 0xe0, 0x6a), 2, false},
+        {"Marathoner", sf::Color(0xff, 0xd0, 0x4d), 3, false},
+        {"Custom", sf::Color(0xff, 0xff, 0xff), -1, true}
+    };
+
+    loadSkinsData();
+    applySelectedSkin();
 }
 
 void Game::startLevel(int index, const std::string& path){
@@ -91,6 +104,8 @@ std::vector<sf::FloatRect> Game::levelButtonBounds() const {
 void Game::handleMainMenuClick(sf::Vector2f mousePos){
     if (playButtonBounds().contains(mousePos)){
         state = GameState::LevelSelect;
+    }else if (skinsMenuButtonBounds().contains(mousePos)){
+        state = GameState::Skins;
     }
 }
 
@@ -150,6 +165,15 @@ void Game::handleInput() {
                     state = GameState::LevelSelect;
                 }
             }
+
+            if (state == GameState::Skins && keyPressed->code == sf::Keyboard::Key::Escape){
+                if (editingCustomSkin){
+                    editingCustomSkin = false;
+                    saveSkinsData();
+                }else{
+                    state = GameState::MainMenu;
+                }
+            }
         }
         if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>()){
             sf::Vector2f mousePos((float)mousePressed->position.x, (float)mousePressed->position.y);
@@ -168,6 +192,8 @@ void Game::handleInput() {
                 }
             }else if (state == GameState::Editor){
                 handleEditorMouseDown(mousePos);
+            }else if (state == GameState::Skins){
+                handleSkinsClick(mousePos);
             }
         }
 
@@ -274,6 +300,19 @@ void Game::renderMainMenu(){
     playText.setFillColor(sf::Color(0x1b, 0x1b, 0x2b));
     playText.setPosition(sf::Vector2f(btn.position.x + btn.size.x / 2.f - 35.f, btn.position.y + 12.f));
     window.draw(playText);
+
+    sf::FloatRect skinsBtn = skinsMenuButtonBounds();
+    sf::RectangleShape skinsShape(skinsBtn.size);
+    skinsShape.setPosition(skinsBtn.position);
+    skinsShape.setFillColor(sf::Color(0x2c, 0x2c, 0x44));
+    skinsShape.setOutlineColor(sf::Color(0xe8, 0xa3, 0x3d));
+    skinsShape.setOutlineThickness(2.f);
+    window.draw(skinsShape);
+
+    sf::Text skinsText(font, "SKINS", 26);
+    skinsText.setFillColor(sf::Color::White);
+    skinsText.setPosition(sf::Vector2f(skinsBtn.position.x + skinsBtn.size.x / 2.f - 42.f, skinsBtn.position.y + 12.f));
+    window.draw(skinsText);
 }
 
 void Game::renderLevelSelect(){
@@ -406,6 +445,8 @@ void Game::render(){
         renderPlaying();
     }else if (state == GameState::Editor){
         renderEditor();
+    }else if (state == GameState::Skins){
+        renderSkins();
     }
     window.display();
 }
@@ -419,7 +460,9 @@ void Game::run() {
         handleInput();
         if (state == GameState::Editor){
             updateEditor(dt);
-        }else{
+        }else if (state == GameState::Skins){
+            updateSkins(dt);
+        }else {
             update(dt);
         }
         render();
@@ -767,5 +810,261 @@ void Game::renderEditor(){
         nameText.setFillColor(sf::Color(0x7c, 0xf2, 0x7c));
         nameText.setPosition(sf::Vector2f(WIDTH / 2.f - 180.f, HEIGHT / 2.f - 10.f));
         window.draw(nameText);
+    }
+}
+
+sf::FloatRect Game::skinsMenuButtonBounds() const {
+    return sf::FloatRect(sf::Vector2f(WIDTH / 2.f - 100.f, HEIGHT / 2.f + 50.f), sf::Vector2f(200.f, 60.f));
+}
+
+sf::FloatRect Game::skinsBackButtonBounds() const {
+    return sf::FloatRect(sf::Vector2f(20.f, 20.f), sf::Vector2f(100.f, 44.f));
+}
+
+sf::FloatRect Game::skinSliderBounds(int index) const {
+    float w = 320.f, h = 24.f;
+    float x = WIDTH / 2.f - w / 2.f;
+    float y = HEIGHT / 2.f - 40.f + index * 55.f;
+    return sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(w, h));
+}
+
+sf::FloatRect Game::skinDoneEditingButtonBounds() const {
+    return sf::FloatRect(sf::Vector2f(WIDTH / 2.f - 80.f, HEIGHT / 2.f + 140.f), sf::Vector2f(160.f, 46.f));
+}
+
+std::vector<sf::FloatRect> Game::skinButtonBounds() const {
+    std::vector<sf::FloatRect> bounds;
+    int columns = 3;
+    float boxWidth = 260.f;
+    float boxHeight = 110.f;
+    float spacingX = 20.f;
+    float spacingY = 20.f;
+
+    int rows = (int)((skins.size() + columns - 1) / columns);
+    float totalWidth = columns * boxWidth + (columns - 1) * spacingX;
+    float totalHeight = rows * boxHeight + (rows - 1) * spacingY;
+    float startX = WIDTH / 2.f - totalWidth / 2.f;
+    float startY = HEIGHT / 2.f - totalHeight / 2.f + 30.f;
+
+    for (size_t i = 0; i < skins.size(); i++){
+        int col = i % columns;
+        int row = i / columns;
+        float x = startX + col * (boxWidth + spacingX);
+        float y = startY + row * (boxHeight + spacingY);
+        bounds.push_back(sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(boxWidth, boxHeight)));
+    }
+    return bounds;
+}
+
+bool Game::isSkinUnlocked(int index) const {
+    if (index < 0 || index >= (int)skins.size()) return false;
+    const SkinInfo& s = skins[index];
+    if (s.unlockLevelIndex < 0) return true;
+    if (s.unlockLevelIndex >= (int)bestTimes.size()) return false;
+    return bestTimes[s.unlockLevelIndex] >= 0.f;
+}
+
+void Game::applySelectedSkin(){
+    if (selectedSkin < 0 || selectedSkin >= (int)skins.size()) return;
+    player.setSkin(skins[selectedSkin].color);
+}
+
+void Game::loadSkinsData(){
+    std::ifstream in("skins.txt");
+    if (!in.is_open()) return;
+
+    int sel;
+    if (in >> sel){
+        if (sel >= 0 && sel < (int)skins.size()) selectedSkin = sel;
+    }
+    int r, g, b;
+    if (in >> r >> g >> b){
+        skins[CUSTOM_SKIN_INDEX].color = sf::Color((std::uint8_t)r, (std::uint8_t)g, (std::uint8_t)b);
+    }
+}
+
+void Game::saveSkinsData(){
+    std::ofstream out("skins.txt");
+    out << selectedSkin << "\n";
+    out << (int)skins[CUSTOM_SKIN_INDEX].color.r << " "
+        << (int)skins[CUSTOM_SKIN_INDEX].color.g << " "
+        << (int)skins[CUSTOM_SKIN_INDEX].color.b << "\n";
+}
+
+void Game::handleSkinsClick(sf::Vector2f mousePos){
+    if (editingCustomSkin){
+        for (int i = 0; i < 3; i++){
+            sf::FloatRect sb = skinSliderBounds(i);
+            if (sb.contains(mousePos)){
+                draggingSlider = i;
+                float t = std::clamp((mousePos.x - sb.position.x) / sb.size.x, 0.f, 1.f);
+                std::uint8_t val = (std::uint8_t)(t * 255.f);
+                sf::Color c = skins[CUSTOM_SKIN_INDEX].color;
+                if (i == 0) c.r = val; else if (i == 1) c.g = val; else c.b = val;
+                skins[CUSTOM_SKIN_INDEX].color = c;
+                selectedSkin = CUSTOM_SKIN_INDEX;
+                applySelectedSkin();
+                return;
+            }
+        }
+        if (skinDoneEditingButtonBounds().contains(mousePos)){
+            editingCustomSkin = false;
+            saveSkinsData();
+            return;
+        }
+        return;
+    }
+
+    if (skinsBackButtonBounds().contains(mousePos)){
+        state = GameState::MainMenu;
+        return;
+    }
+
+    auto bounds = skinButtonBounds();
+    for (size_t i = 0; i < bounds.size(); i++){
+        if (bounds[i].contains(mousePos)){
+            if (skins[i].isCustom){
+                editingCustomSkin = true;
+                selectedSkin = (int)i;
+                applySelectedSkin();
+                return;
+            }
+            if (isSkinUnlocked((int)i)){
+                selectedSkin = (int)i;
+                applySelectedSkin();
+                saveSkinsData();
+            }
+            return;
+        }
+    }
+}
+
+void Game::updateSkins(float dt){
+    if (draggingSlider == -1) return;
+    if (!sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)){
+        draggingSlider = -1;
+        return;
+    }
+    sf::Vector2i mp = sf::Mouse::getPosition(window);
+    sf::FloatRect sb = skinSliderBounds(draggingSlider);
+    float t = std::clamp(((float)mp.x - sb.position.x) / sb.size.x, 0.f, 1.f);
+    std::uint8_t val = (std::uint8_t)(t * 255.f);
+    sf::Color c = skins[CUSTOM_SKIN_INDEX].color;
+    if (draggingSlider == 0) c.r = val; else if (draggingSlider == 1) c.g = val; else c.b = val;
+    skins[CUSTOM_SKIN_INDEX].color = c;
+    applySelectedSkin();
+}
+
+void Game::renderSkins(){
+    if (!fontLoaded) return;
+
+    sf::Text title(font, "Skins", 36);
+    title.setFillColor(sf::Color::White);
+    title.setPosition(sf::Vector2f(WIDTH / 2.f - 60.f, 30.f));
+    window.draw(title);
+
+    sf::FloatRect backB = skinsBackButtonBounds();
+    sf::RectangleShape backBtn(backB.size);
+    backBtn.setPosition(backB.position);
+    backBtn.setFillColor(sf::Color(0x2c, 0x2c, 0x44));
+    window.draw(backBtn);
+    sf::Text backLabel(font, "Back", 16);
+    backLabel.setFillColor(sf::Color::White);
+    backLabel.setPosition(sf::Vector2f(backB.position.x + 22.f, backB.position.y + 12.f));
+    window.draw(backLabel);
+
+    auto bounds = skinButtonBounds();
+    for (size_t i = 0; i < bounds.size(); i++){
+        bool unlocked = isSkinUnlocked((int)i);
+        bool selected = (selectedSkin == (int)i);
+
+        sf::RectangleShape box(bounds[i].size);
+        box.setPosition(bounds[i].position);
+        box.setFillColor(sf::Color(0x2c, 0x2c, 0x44));
+        box.setOutlineColor(selected ? sf::Color(0x7c, 0xf2, 0x7c) : sf::Color(0xe8, 0xa3, 0x3d));
+        box.setOutlineThickness(selected ? 3.f : 2.f);
+        window.draw(box);
+
+        sf::CircleShape preview(22.f);
+        preview.setPosition(sf::Vector2f(bounds[i].position.x + 20.f, bounds[i].position.y + 15.f));
+        sf::Color c = skins[i].color;
+        if (!unlocked && !skins[i].isCustom) c.a = 80;
+        preview.setFillColor(c);
+        window.draw(preview);
+
+        sf::Text label(font, skins[i].name, 16);
+        label.setFillColor((unlocked || skins[i].isCustom) ? sf::Color::White : sf::Color(0x88, 0x88, 0x88));
+        label.setPosition(sf::Vector2f(bounds[i].position.x + 75.f, bounds[i].position.y + 20.f));
+        window.draw(label);
+
+        if (skins[i].isCustom){
+            sf::Text hint(font, "Tap to customize", 13);
+            hint.setFillColor(sf::Color(0xcc, 0xcc, 0xcc));
+            hint.setPosition(sf::Vector2f(bounds[i].position.x + 20.f, bounds[i].position.y + 75.f));
+            window.draw(hint);
+        }else if (!unlocked){
+            sf::Text hint(font, "Beat Level " + std::to_string(skins[i].unlockLevelIndex + 1), 13);
+            hint.setFillColor(sf::Color(0xcc, 0x8a, 0x8a));
+            hint.setPosition(sf::Vector2f(bounds[i].position.x + 20.f, bounds[i].position.y + 75.f));
+            window.draw(hint);
+        }else if (selected){
+            sf::Text hint(font, "Equipped", 13);
+            hint.setFillColor(sf::Color(0x7c, 0xf2, 0x7c));
+            hint.setPosition(sf::Vector2f(bounds[i].position.x + 20.f, bounds[i].position.y + 75.f));
+            window.draw(hint);
+        }
+    }
+
+    if (editingCustomSkin){
+        sf::RectangleShape overlay(sf::Vector2f(WIDTH, HEIGHT));
+        overlay.setFillColor(sf::Color(0, 0, 0, 180));
+        window.draw(overlay);
+
+        sf::RectangleShape panel(sf::Vector2f(420.f, 260.f));
+        panel.setPosition(sf::Vector2f(WIDTH / 2.f - 210.f, HEIGHT / 2.f - 130.f));
+        panel.setFillColor(sf::Color(0x2c, 0x2c, 0x44));
+        panel.setOutlineColor(sf::Color(0xe8, 0xa3, 0x3d));
+        panel.setOutlineThickness(2.f);
+        window.draw(panel);
+
+        sf::CircleShape bigPreview(28.f);
+        bigPreview.setPosition(sf::Vector2f(WIDTH / 2.f - 28.f, HEIGHT / 2.f - 115.f));
+        bigPreview.setFillColor(skins[CUSTOM_SKIN_INDEX].color);
+        window.draw(bigPreview);
+
+        const char* names[3] = {"R", "G", "B"};
+        sf::Color c = skins[CUSTOM_SKIN_INDEX].color;
+        int values[3] = {c.r, c.g, c.b};
+
+        for (int i = 0; i < 3; i++){
+            sf::FloatRect sb = skinSliderBounds(i);
+
+            sf::RectangleShape track(sb.size);
+            track.setPosition(sb.position);
+            track.setFillColor(sf::Color(0x14, 0x14, 0x22));
+            window.draw(track);
+
+            float fillWidth = sb.size.x * (values[i] / 255.f);
+            sf::RectangleShape fill(sf::Vector2f(fillWidth, sb.size.y));
+            fill.setPosition(sb.position);
+            sf::Color fillColor = (i == 0) ? sf::Color(0xe0, 0x5a, 0x5a) : (i == 1) ? sf::Color(0x5a, 0xe0, 0x5a) : sf::Color(0x5a, 0x8a, 0xe0);
+            fill.setFillColor(fillColor);
+            window.draw(fill);
+
+            sf::Text label(font, std::string(names[i]) + ": " + std::to_string(values[i]), 14);
+            label.setFillColor(sf::Color::White);
+            label.setPosition(sf::Vector2f(sb.position.x, sb.position.y - 20.f));
+            window.draw(label);
+        }
+
+        sf::FloatRect doneB = skinDoneEditingButtonBounds();
+        sf::RectangleShape doneBtn(doneB.size);
+        doneBtn.setPosition(doneB.position);
+        doneBtn.setFillColor(sf::Color(0x5e, 0xc4, 0xff));
+        window.draw(doneBtn);
+        sf::Text doneLabel(font, "DONE", 16);
+        doneLabel.setFillColor(sf::Color(0x1b, 0x1b, 0x2b));
+        doneLabel.setPosition(sf::Vector2f(doneB.position.x + 55.f, doneB.position.y + 13.f));
+        window.draw(doneLabel);
     }
 }

@@ -1,16 +1,23 @@
 #include "Player.h"
 #include "Game.h"
 #include <cmath>
+#include <algorithm>
+#include <cstdint>
 
 Player::Player() {
     reset();
 }
 
-void Player::reset() {
+void Player::reset(){
     y = getGroundY() - RADIUS;
     velocityY = 0.f;
     rotation = 0.f;
     onGround = true;
+    trail.clear();
+}
+
+void Player::setSkin(sf::Color color){
+    skinColor = color;
 }
 
 void Player::jump() {
@@ -35,9 +42,14 @@ void Player::update(float dt, float floorY) {
 
     if (!onGround) {
         rotation += 480.f * dt;
-    } else {
+        trail.push_back({y, 0.f});
+    }else {
         rotation = std::round(rotation / 90.f) * 90.f;
     }
+
+    for (auto& t : trail) t.age += dt;
+    trail.erase(std::remove_if(trail.begin(), trail.end(), 
+            [](const TrailPoint& t){return t.age > TRAIL_LIFETIME; }), trail.end());
 }
 
 float Player::getGroundY() {
@@ -45,11 +57,23 @@ float Player::getGroundY() {
 }
 
 void Player::render(sf::RenderWindow& window, float screenX) {
+    for (const auto& t : trail){
+        float alpha = std::max(0.f, 1.f - (t.age / TRAIL_LIFETIME));
+        float trailX = screenX - t.age * TRAIL_SPEED;
+        sf::CircleShape trailDot(RADIUS * 0.7f);
+        trailDot.setOrigin(sf::Vector2f(RADIUS * 0.7f, RADIUS * 0.7f));
+        trailDot.setPosition(sf::Vector2f(trailX, t.y));
+        sf::Color tc = skinColor;
+        tc.a = (std::uint8_t)(alpha * 120.f);
+        trailDot.setFillColor(tc);
+        window.draw(trailDot);
+    }
+
     sf::CircleShape shape(RADIUS);
     shape.setOrigin(sf::Vector2f(RADIUS, RADIUS));
     shape.setPosition(sf::Vector2f(screenX, y));
     shape.setRotation(sf::degrees(rotation));
-    shape.setFillColor(sf::Color(0x5e, 0xc4, 0xff));
+    shape.setFillColor(skinColor);
     window.draw(shape);
 
     sf::RectangleShape indicator(sf::Vector2f(RADIUS, 3.f));
